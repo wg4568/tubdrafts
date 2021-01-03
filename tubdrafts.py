@@ -7,7 +7,7 @@ config = json.load(open("config.json", "r"))
 auth = tweepy.OAuthHandler(config['api_key'], config['api_secret'])
 auth.set_access_token(config['access_token'], config['access_secret'])
 
-twitter = tweepy.API(auth, wait_on_rate_limit=True, wait_on_rate_limit_notify=True)
+twitter = tweepy.API(auth)
 
 class Listener:
     def __init__(self, twitter):
@@ -30,7 +30,10 @@ class Listener:
         }
 
     def update_followers(self):
-        self.followers = twitter.friends()
+        try:
+            self.followers = twitter.friends()
+        except tweepy.error.RateLimitError:
+            print('Follower update rate limit reached, skipping')
     
     def is_follower(self, user_id):
         for user in self.followers:
@@ -45,8 +48,9 @@ class Listener:
     def mark_seen(self, *msgs):
         with open(config['message_list'], 'a') as f:
             for msg in msgs:
-                f.write(msg + '\n')
-        self.seen += msgs
+                if msg not in self.seen:
+                    f.write(msg + '\n')
+                    self.seen.append(msg)
 
     def get_new_messages(self):
         msgs = self.api.list_direct_messages()
@@ -64,15 +68,24 @@ class Listener:
     def listen(self):
         self.listening = True
         while self.listening:
-            self.update_followers()
-            new = self.get_new_messages()
-            rate = self.get_rate_info()
-            timeout = rate['reset'] / rate['remaining']
+            try:
+                new = self.get_new_messages()
 
-            print('New messages:', new)
-            print('Sleeping for %s seconds', timeout)
+                rate = self.get_rate_info() # dynamic timing based on rate limit
+                timeout = rate['reset'] / rate['remaining']
 
-            time.sleep(timeout)
+                print('Tweeting new messages:', new)
+
+                for msg in new:
+                    self.api.update_status(msg)
+
+                print('Sleeping for %s seconds (%s calls)' % (timeout, rate['remaining']))
+
+                time.sleep(timeout)
+                self.update_followers()
+            except tweepy.error.RateLimitError:
+                print('DM rate limited reached, sleeping for 10 seconds')
+                time.sleep(10)
 
 listener = Listener(twitter)
 listener.listen()
