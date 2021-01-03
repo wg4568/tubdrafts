@@ -66,11 +66,13 @@ class Listener:
         while self.listening:
             self.update_followers()
             new = self.get_new_messages()
+            rate = self.get_rate_info()
+            timeout = rate['reset'] / rate['remaining']
 
-            print(self.get_rate_info())
-            print(new)
+            print('New messages:', new)
+            print('Sleeping for %s seconds', timeout)
 
-            time.sleep(60)
+            time.sleep(timeout)
 
 listener = Listener(twitter)
 listener.listen()
